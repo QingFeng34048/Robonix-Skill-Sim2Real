@@ -1,4 +1,4 @@
-# VLA-Deployer
+# Robonix-SKill-Toolkit
 
 This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！
 
@@ -8,8 +8,7 @@ https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 
 # News
 
-* 🔥 [2026-06] Our work has been used by [Robonix](https://github.com/syswonder/robonix)!
-* 🔥 [2026-06] We released VLA-Deployer, based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
+* 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
 ## Step1: Get Start & Environment Setup
 
