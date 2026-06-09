@@ -1,8 +1,12 @@
-# Robonix-SKill-Toolkit
+<p align="center">
+  <img src="images/robonix-logo.svg" alt="Robonix" width="420" />
+</p>
+
+# Robonix-Skill-Toolkit
 
 This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！
 
-We present an example to demonstrate the performance of VLA-Deployer:
+We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
 
 https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 
@@ -10,7 +14,7 @@ https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 
 * 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
-## Step1: Get Start & Environment Setup
+# Step1: Get Start & Environment Setup
 
 ```
 # Create and activate conda environment
@@ -35,7 +39,7 @@ pip install "flash-attn==2.5.5" --no-build-isolation
 
 After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
 
-## Step2: Data Collection
+# Step2: Data Collection
 
 `client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
 
@@ -43,7 +47,7 @@ After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune
 
 `client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. A helper script `client/run_rlds.sh` is provided for this conversion.
 
-## Data Example
+# Step3: Data Example
 
 Here is an example of `feature.json` of datasets in RLDS format.
 ![image](https://github.com/QingFeng34048/image-and-video/blob/main/feature.png)
@@ -51,7 +55,7 @@ Here is an example of `feature.json` of datasets in RLDS format.
 Here is an example of `dataset_info.json` of datasets in RLDS format.
 ![image](https://github.com/QingFeng34048/image-and-video/blob/main/info.png)
 
-## Fine-Tuning
+# Step4: Fine-Tuning
 
 +The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
 Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
