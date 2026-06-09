@@ -11,31 +11,11 @@ https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 * 🔥 [2026-06] Our work has been used by Robonix!
 * 🔥 [2026-06] We released VLA-Deployer！
 
-## Our Video
+## Step1: Get Start
 
-https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
+在这里写清楚你怎么安装的环境
 
-## Data Collection
-
-`client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
-
-`client/collect_data.py` is used for data collection. Run the script, enter a prompt (e.g., "pick up the banana") as instructed, and press Enter to start the collection process. Press S to begin recording and Y to stop recording.
-
-`client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. A helper script `client/run_rlds.sh` is provided for this conversion.
-
-## Data Example
-
-Here is an example of `feature.json` of datasets in RLDS format.
-![image](https://github.com/QingFeng34048/image-and-video/blob/main/feature.png)
-
-Here is an example of `dataset_info.json` of datasets in RLDS format.
-![image](https://github.com/QingFeng34048/image-and-video/blob/main/info.png)
-
-## Fine-Tuning
-
-### Environment setup
-
-```bash
+```
 # Create and activate conda environment
 conda create -n openvla-oft python=3.10 -y
 conda activate openvla-oft
@@ -58,9 +38,25 @@ pip install "flash-attn==2.5.5" --no-build-isolation
 
 After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
 
-## Fine-Tuning Result Validation
+## Step2: Data Collection
 
-The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
+`client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
+
+`client/collect_data.py` is used for data collection. Run the script, enter a prompt (e.g., "pick up the banana") as instructed, and press Enter to start the collection process. Press S to begin recording and Y to stop recording.
+
+`client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. A helper script `client/run_rlds.sh` is provided for this conversion.
+
+## Data Example
+
+Here is an example of `feature.json` of datasets in RLDS format.
+![image](https://github.com/QingFeng34048/image-and-video/blob/main/feature.png)
+
+Here is an example of `dataset_info.json` of datasets in RLDS format.
+![image](https://github.com/QingFeng34048/image-and-video/blob/main/info.png)
+
+## Fine-Tuning
+
++The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
 Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
 Server side: Performs inference to compute robot actions and sends the action results back to the client.
 In our setup, a Dell laptop running Ubuntu controls the robotic arm. Connect the two USB cables from the robotic arm and camera to the laptop.
