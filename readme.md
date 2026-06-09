@@ -8,12 +8,10 @@ https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 
 # News
 
-* 🔥 [2026-06] Our work has been used by Robonix!
-* 🔥 [2026-06] We released VLA-Deployer！
+* 🔥 [2026-06] Our work has been used by [Robonix](https://github.com/syswonder/robonix)!
+* 🔥 [2026-06] We released VLA-Deployer, based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
-## Step1: Get Start
-
-在这里写清楚你怎么安装的环境
+## Step1: Get Start & Environment Setup
 
 ```
 # Create and activate conda environment
