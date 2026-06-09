@@ -1,19 +1,65 @@
-# Robotic Arm 202606
-In this project we use Agilex Piper to evaluate OpenVLA-OFT fine-tuning result. 
+# VLA-Deployer
+
+This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！
+
+We present an example to demonstrate the performance of VLA-Deployer:
+
+https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
+
+# News
+
+* 🔥 [2026-06] Our work has been used by Robonix!
+* 🔥 [2026-06] We released VLA-Deployer！
+
 ## Our Video
+
 https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
 
 ## Data Collection
+
 `client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
 
 `client/collect_data.py` is used for data collection. Run the script, enter a prompt (e.g., "pick up the banana") as instructed, and press Enter to start the collection process. Press S to begin recording and Y to stop recording.
 
 `client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. A helper script `client/run_rlds.sh` is provided for this conversion.
+
 ## Data Example
 
+Here is an example of `feature.json` of datasets in RLDS format.
+![image](https://github.com/QingFeng34048/image-and-video/blob/main/feature.png)
+
+Here is an example of `dataset_info.json` of datasets in RLDS format.
+![image](https://github.com/QingFeng34048/image-and-video/blob/main/info.png)
+
 ## Fine-Tuning
-Refer to `openvla-oft/README.md` for environment setup instructions. After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
+
+### Environment setup
+
+```bash
+# Create and activate conda environment
+conda create -n openvla-oft python=3.10 -y
+conda activate openvla-oft
+
+# Install PyTorch
+# Use a command specific to your machine: https://pytorch.org/get-started/locally/
+pip3 install torch torchvision torchaudio
+
+# Clone openvla-oft repo and pip install to download dependencies
+git clone https://github.com/moojink/openvla-oft.git
+cd openvla-oft
+pip install -e .
+
+# Install Flash Attention 2 for training (https://github.com/Dao-AILab/flash-attention)
+#   =>> If you run into difficulty, try `pip cache remove flash_attn` first
+pip install packaging ninja
+ninja --version; echo $?  # Verify Ninja --> should return exit code "0"
+pip install "flash-attn==2.5.5" --no-build-isolation
+```
+
+After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
+
 ## Fine-Tuning Result Validation
+
 The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
 Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
 Server side: Performs inference to compute robot actions and sends the action results back to the client.
