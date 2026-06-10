@@ -16,6 +16,14 @@ This project provides detailed guidelines to implement data collection, fine-tun
 
 * 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
+# Hardware & System Config
+
+| Robotic Arm       | Camera             | OS         |
+| ----------------- | ------------------ | ---------- |
+| Agilex Piper ✅   | ORBBEC DABAI ✅    | Robonix ✅ |
+| LeRobot SO-101 📝 | Intel RealSense 📝 | Robonix ✅ |
+| ...               | ...                | ...        |
+
 # Overall Workflow
 
 ![image](./images/workflow1.png)
@@ -122,40 +130,40 @@ After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune
 Our configuration is:
 
 ```
- use_l1_regression: bool = True                
-    use_diffusion: bool = False                    
-    num_diffusion_steps_train: int = 50            
-    use_film: bool = False                         
-    num_images_in_input: int = 1                   
-    use_proprio: bool = False                      
+ use_l1_regression: bool = True        
+    use_diffusion: bool = False            
+    num_diffusion_steps_train: int = 50    
+    use_film: bool = False                 
+    num_images_in_input: int = 1           
+    use_proprio: bool = False              
     # Training configuration
-    batch_size: int = 4                            
-    learning_rate: float = 5e-4                    
-    lr_warmup_steps: int = 0                       
-    num_steps_before_decay: int = 100_000          
-    grad_accumulation_steps: int = 1               
-    max_steps: int = 20_000                       
-    use_val_set: bool = False                      
-    val_freq: int = 10_000                         
-    val_time_limit: int = 180                     
-    save_freq: int = 1000                       
-    save_latest_checkpoint_only: bool = False      
-                                                   
-    resume: bool = False                           
-    resume_step: Optional[int] = None              
-    image_aug: bool = True                         
-    diffusion_sample_freq: int = 50                
+    batch_size: int = 4                    
+    learning_rate: float = 5e-4            
+    lr_warmup_steps: int = 0               
+    num_steps_before_decay: int = 100_000  
+    grad_accumulation_steps: int = 1       
+    max_steps: int = 20_000               
+    use_val_set: bool = False              
+    val_freq: int = 10_000                 
+    val_time_limit: int = 180             
+    save_freq: int = 1000               
+    save_latest_checkpoint_only: bool = False  
+                                           
+    resume: bool = False                   
+    resume_step: Optional[int] = None      
+    image_aug: bool = True                 
+    diffusion_sample_freq: int = 50        
 
     # LoRA
-    use_lora: bool = True                          
-    lora_rank: int = 32                            
-    lora_dropout: float = 0                      
-    merge_lora_during_training: bool = False        
-                                                   
+    use_lora: bool = True                  
+    lora_rank: int = 32                    
+    lora_dropout: float = 0              
+    merge_lora_during_training: bool = False  
+                                           
 ```
 
 These plots show the training loss, L1 loss, and action accuracy during fine-tuning.
-![image](https://github.com/QingFeng34048/image-and-video/blob/main/training_curve.PNG)
+![image](./images/training_curve.PNG)
 
 # Step4: Fine-Tuning Result Validation
 
@@ -175,4 +183,4 @@ Next, navigate to the client folder on the client machine and execute `client/ru
 
 We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
 
-![example](./example/example.mp4)
+https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
