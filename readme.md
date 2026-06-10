@@ -13,7 +13,7 @@ This project provides detailed guidelines to implement data collection, fine-tun
 ![layer架构](./images/robonix-layers.png)
 
 # News
-
+* 🔥 [2026-06] We actively adapt to various hardware including robotic arms and cameras, and provide relevant codes for skill acceleration in the future.
 * 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
 # Hardware & System Config
