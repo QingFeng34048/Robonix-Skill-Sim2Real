@@ -167,17 +167,17 @@ These plots show the training loss, L1 loss, and action accuracy during fine-tun
 
 # Step4: Fine-Tuning Result Validation
 
-The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
+1. The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
 
-Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
+* Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
 
-Server side: Performs inference to compute robot actions and sends the action results back to the client.
+* Server side: Performs inference to compute robot actions and sends the action results back to the client.
 
-In our setup, a Dell laptop running Ubuntu controls the robotic arm. Connect the two USB cables from the robotic arm and camera to the laptop.
+2. In our setup, a Dell laptop running Ubuntu controls the robotic arm. Connect the two USB cables from the robotic arm and camera to the laptop.
 
-Server code is stored in openvla-oft/server_oft.py and launched via the script `openvla-oft/run.sh`. Once started, the server stays idle and waits for data and commands sent from the client.
+3. Server code is stored in openvla-oft/server_oft.py and launched via the script `openvla-oft/run.sh`. Once started, the server stays idle and waits for data and commands sent from the client.
 
-Next, navigate to the client folder on the client machine and execute `client/run.sh` to operate and observe the robotic arm’s movements.
+4. Next, navigate to the client folder on the client machine and execute `client/run.sh` to operate and observe the robotic arm’s movements.
 
 # Example
 
