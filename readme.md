@@ -4,19 +4,23 @@
 
 # Robonix-Skill-Toolkit
 
-This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！
+This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！Specifically, we provide the following function:
 
-We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
+1. Skill Development Workflow under Robonix
+2. High-Efficient Deployment guidance for VLA-based Skills
+3. Data collection, data cleaning and data utilization mechanism with Real-World Robotic Arm
 
-https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
+![layer架构](./images/robonix-layers.png)
 
 # News
 
 * 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
 # Overall Workflow
-![image](https://github.com/QingFeng34048/image-and-video/blob/main/workflow1.png)
-![image](https://github.com/QingFeng34048/image-and-video/blob/main/workflow2.png)
+
+![image](./images/workflow1.png)
+![image](./images/workflow2.png)
+
 # Step1: Get Start & Environment Setup
 
 ```
@@ -39,8 +43,6 @@ ninja --version; echo $?  # Verify Ninja --> should return exit code "0"
 pip install "flash-attn==2.5.5" --no-build-isolation
 ```
 
-
-
 # Step2: Data Collection
 
 `client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
@@ -52,6 +54,7 @@ pip install "flash-attn==2.5.5" --no-build-isolation
 ## Data Example
 
 Here is an example of `dataset_statistics.json` of datasets in RLDS format.
+
 ```JSON
 {
     "action": 
@@ -85,6 +88,7 @@ Here is an example of `dataset_statistics.json` of datasets in RLDS format.
 ```
 
 Here is an example of `dataset_info.json` of datasets in RLDS format.
+
 ```JSON
 {
   "fileFormat": "tfrecord",
@@ -112,50 +116,52 @@ Here is an example of `dataset_info.json` of datasets in RLDS format.
 ```
 
 # Step3: Fine-Tuning
+
 After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
 
 Our configuration is:
+
 ```
- use_l1_regression: bool = True                  
-    use_diffusion: bool = False                      
-    num_diffusion_steps_train: int = 50              
-    use_film: bool = False                           
-    num_images_in_input: int = 1                     
-    use_proprio: bool = False                        
+ use_l1_regression: bool = True                
+    use_diffusion: bool = False                    
+    num_diffusion_steps_train: int = 50            
+    use_film: bool = False                         
+    num_images_in_input: int = 1                   
+    use_proprio: bool = False                      
     # Training configuration
-    batch_size: int = 4                              
-    learning_rate: float = 5e-4                      
-    lr_warmup_steps: int = 0                         
-    num_steps_before_decay: int = 100_000            
-    grad_accumulation_steps: int = 1                 
-    max_steps: int = 20_000                         
-    use_val_set: bool = False                        
-    val_freq: int = 10_000                           
-    val_time_limit: int = 180                       
-    save_freq: int = 1000                         
-    save_latest_checkpoint_only: bool = False        
-                                                     
-    resume: bool = False                             
-    resume_step: Optional[int] = None                
-    image_aug: bool = True                           
-    diffusion_sample_freq: int = 50                  
+    batch_size: int = 4                            
+    learning_rate: float = 5e-4                    
+    lr_warmup_steps: int = 0                       
+    num_steps_before_decay: int = 100_000          
+    grad_accumulation_steps: int = 1               
+    max_steps: int = 20_000                       
+    use_val_set: bool = False                      
+    val_freq: int = 10_000                         
+    val_time_limit: int = 180                     
+    save_freq: int = 1000                       
+    save_latest_checkpoint_only: bool = False      
+                                                   
+    resume: bool = False                           
+    resume_step: Optional[int] = None              
+    image_aug: bool = True                         
+    diffusion_sample_freq: int = 50                
 
     # LoRA
-    use_lora: bool = True                            
-    lora_rank: int = 32                              
-    lora_dropout: float = 0                        
-    merge_lora_during_training: bool = False          
-                                                     
+    use_lora: bool = True                          
+    lora_rank: int = 32                            
+    lora_dropout: float = 0                      
+    merge_lora_during_training: bool = False        
+                                                   
 ```
 
 These plots show the training loss, L1 loss, and action accuracy during fine-tuning.
 ![image](https://github.com/QingFeng34048/image-and-video/blob/main/training_curve.PNG)
 
 # Step4: Fine-Tuning Result Validation
+
 The Piper robotic arm acts as the client, while OpenVLA serves as the server. The two communicate over a local area network via the HTTP protocol.
 
 Client side: Accesses the camera to capture frames, receives text prompts, packages images, prompts and robot states, and sends an HTTP POST request to the server.
-
 
 Server side: Performs inference to compute robot actions and sends the action results back to the client.
 
@@ -164,3 +170,9 @@ In our setup, a Dell laptop running Ubuntu controls the robotic arm. Connect the
 Server code is stored in openvla-oft/server_oft.py and launched via the script `openvla-oft/run.sh`. Once started, the server stays idle and waits for data and commands sent from the client.
 
 Next, navigate to the client folder on the client machine and execute `client/run.sh` to operate and observe the robotic arm’s movements.
+
+# Example
+
+We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
+
+![example](./example/example.mp4)
