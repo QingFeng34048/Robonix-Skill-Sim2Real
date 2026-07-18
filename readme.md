@@ -31,6 +31,7 @@ This project provides detailed guidelines to implement data collection, fine-tun
 ![image](./images/workflow2.png)
 
 # File Structure
+```
 Robonix-Skill-Toolkit/
 ├── robonix_config.py
 ├── configs/
@@ -45,6 +46,7 @@ Robonix-Skill-Toolkit/
     ├── server_oft.py
     └── vla-scripts/
         └── finetune.py
+```
 
 # Step1: Get Start & Environment Setup
 
