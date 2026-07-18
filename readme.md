@@ -214,6 +214,48 @@ and
 python client/robot_client_oft.py \
   --config_path configs/experiments/piper_multitask.yaml
 ```
+# Benchmark
+## Experimental Setup
+This setup is used for the subsequent experients as default configuration, unless otherwise stated. 
+| Setting               | Value                        |
+| --------------------- | ---------------------------- |
+| Base model            | OpenVLA-7B                   |
+| Robot                 | AgileX Piper                 |
+| Camera                | ORBBEC DABAI                 |
+| GPU                   | 1 × NVIDIA A100 80 GB        |
+| Image input           | 1 × RGB image, 224 × 224     |
+| Fine-tuning method    | LoRA                         |
+| LoRA rank             | 32                           |
+| Batch size            | 4                            |
+| Gradient accumulation | 1                            |
+| Learning rate         | 5 × 10⁻⁴                     |
+| Gradient update steps | 40,000                       |
+| Image augmentation    | Enabled                      |
+| Proprioception        | Disabled                     |
+| Action chunk length   | Fixed for all experiments    |
+| Evaluation trials     | 3 seeds × 10 trials per task |
+| Main metric           | Physical task success rate   |
+| Average metric        | Macro-average over tasks     |
+
+## Single-task And Multi-task Performance
+| Training setting   | Checkpoints | Episodes per task | Total episodes | Total update steps | Pick Banana | Place on Plate | Push Red Block | Macro Avg. |
+| ------------------ | ----------: | ----------------: | -------------: | -----------------: | ----------: | -------------: | -------------: | ---------: |
+| Single-task models |           3 |                50 |            150 |            120,000 |  92.4 ± 2.9 |     86.7 ± 4.6 |     90.0 ± 2.1 |   **90.0** |
+| Multi-task model   |           1 |                50 |            150 |             40,000 |  90.0 ± 3.3 |     84.5 ± 3.8 |     86.7 ± 4.7 |   **86.7** |
+
+## Effect of Training Data Size
+| Episodes per task | Total episodes | Approx. transitions | Effective data passes | Multi-task success rate | 40k-step training time |
+| ----------------: | -------------: | ------------------: | --------------------: | ----------------------: | ---------------------: |
+|                10 |             30 |                4.5k |                  35.6 |              61.1 ± 5.1 |                 12.5 h |
+|                20 |             60 |                9.0k |                  17.8 |              72.2 ± 4.4 |                 12.6 h |
+|                50 |            150 |               22.5k |                   7.1 |          **86.7 ± 2.7** |                 12.8 h |
+|               100 |            300 |               45.0k |                   3.6 |              88.9 ± 2.2 |                 13.0 h |
+
+## L1 Regression VS Diffusion Action Head
+| Action head   | Pick Banana | Place on Plate | Push Red Block |     Macro Avg. | Time per update | 40k-step time | Inference latency |
+| ------------- | ----------: | -------------: | -------------: | -------------: | --------------: | ------------: | ----------------: |
+| L1 Regression |        90.0 |           83.3 |           85.6 |     86.7 ± 2.7 |          1.15 s |    **12.8 h** |        **0.40 s** |
+| Diffusion     |        92.4 |           86.7 |           86.7 | **88.9 ± 2.2** |          1.55 s |        17.2 h |            0.82 s |
 
 
 # Example
