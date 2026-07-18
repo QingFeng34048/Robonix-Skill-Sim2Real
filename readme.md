@@ -30,6 +30,22 @@ This project provides detailed guidelines to implement data collection, fine-tun
 ![image](./images/workflow1.png)
 ![image](./images/workflow2.png)
 
+# File Structure
+Robonix-Skill-Toolkit/
+├── robonix_config.py
+├── configs/
+│   └── experiments/
+│       └── piper_multitask.yaml
+├── data/
+│   ├── collect_data.py
+│   └── hdf5_to_rlds.py
+├── client/
+│   └── robot_client_oft.py
+└── openvla-oft/
+    ├── server_oft.py
+    └── vla-scripts/
+        └── finetune.py
+
 # Step1: Get Start & Environment Setup
 
 ```
