@@ -4,14 +4,21 @@ finetune.py
 Fine-tunes OpenVLA via LoRA.
 """
 
+import argparse
 import os
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from robonix_config import ExperimentConfig, load_config, resolve_path, expand_value
 from typing import Dict, Optional, Tuple, Type
 
-import draccus
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -68,12 +75,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 @dataclass
 class FinetuneConfig:
     # fmt: off
-    vla_path: str = "/home/iflab-zzh-intern/.cache/huggingface/hub/models--openvla--openvla-7b/snapshots/31f090d05236101ebfc381b61c674dd4746d4ce0"             # Path to OpenVLA model (on HuggingFace Hub or stored locally)
+    vla_path: str = "openvla/openvla-7b"             # Path to OpenVLA model (on HuggingFace Hub or stored locally)
 
     # Dataset
-    data_root_dir: Path = Path("/home/iflab-zzh-intern/tiansicheng/openvla/piper/data_rlds/pick_up_the_banana")      # Directory containing RLDS datasets
-    dataset_name: str = "pick_up_the_banana"    # Name of fine-tuning dataset (e.g., `aloha_scoop_x_into_bowl`)
-    run_root_dir: Path = Path("/home/iflab-zzh-intern/tiansicheng/openvla/piper/runs_oft")                # Path to directory to store logs & checkpoints
+    data_root_dir: Path = Path("outputs/data_rlds")      # Directory containing RLDS datasets
+    dataset_name: str = "piper_multitask"    # Name of fine-tuning dataset (e.g., `aloha_scoop_x_into_bowl`)
+    run_root_dir: Path = Path("outputs/checkpoints/piper_multitask")                # Path to directory to store logs & checkpoints
     shuffle_buffer_size: int = 100_000               # Dataloader shuffle buffer size (can reduce if OOM errors occur)
 
     # Algorithm and architecture
@@ -82,20 +89,20 @@ class FinetuneConfig:
     num_diffusion_steps_train: int = 50              # (When `diffusion==True`) Number of diffusion steps used for training
     use_film: bool = False                           # If True, uses FiLM to infuse language inputs into visual features
     num_images_in_input: int = 1                     # Number of images in the VLA input (default: 1)
-    use_proprio: bool = False                        # If True, includes robot proprioceptive state in input
+    use_proprio: bool = True                    # If True, includes robot proprioceptive state in input
 
     # Training configuration
     batch_size: int = 4                              # Batch size per device (total batch size = batch_size * num GPUs)
-    learning_rate: float = 5e-4                      # Learning rate
+    learning_rate: float = 5e-5                      # Learning rate
     lr_warmup_steps: int = 0                         # Number of steps to warm up learning rate (from 10% to 100%)
-    num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
+    num_steps_before_decay: int = 100_00            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
-    max_steps: int = 20_000                         # Max number of training steps
+    max_steps: int = 30_000                         # Max number of training steps
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
     val_time_limit: int = 180                        # (When `use_val_set==True`) Time limit for computing validation metrics
     save_freq: int = 1000                         # Checkpoint saving frequency in steps
-    save_latest_checkpoint_only: bool = False        # If True, saves only 1 checkpoint, overwriting latest checkpoint
+    save_latest_checkpoint_only: bool = True       # If True, saves only 1 checkpoint, overwriting latest checkpoint
                                                      #   (If False, saves all checkpoints)
     resume: bool = False                             # If True, resumes from checkpoint
     resume_step: Optional[int] = None                # (When `resume==True`) Step number that we are resuming from
@@ -111,8 +118,8 @@ class FinetuneConfig:
                                                      #         False and merge final checkpoint offline!
 
     # Logging
-    wandb_entity: str = "your-wandb-entity"          # Name of WandB entity
-    wandb_project: str = "your-wandb-project"        # Name of WandB project
+    wandb_entity: str = ""          # Name of WandB entity
+    wandb_project: str = "openvla-oft"        # Name of WandB project
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
@@ -750,7 +757,49 @@ def run_validation(
         log_metrics_to_wandb(avg_val_metrics, "VLA Val", log_step, wandb)
 
 
-@draccus.wrap()
+
+
+def build_finetune_config(exp: ExperimentConfig) -> FinetuneConfig:
+    """Map the unified experiment YAML to the original OpenVLA-OFT FinetuneConfig."""
+    return FinetuneConfig(
+        vla_path=expand_value(exp.train.vla_path),
+        data_root_dir=resolve_path(exp.dataset.rlds_root),
+        dataset_name=exp.dataset.name,
+        run_root_dir=resolve_path(exp.train.run_root_dir),
+        shuffle_buffer_size=exp.train.shuffle_buffer_size,
+        use_l1_regression=exp.train.use_l1_regression,
+        use_diffusion=exp.train.use_diffusion,
+        num_diffusion_steps_train=exp.train.num_diffusion_steps_train,
+        use_film=exp.train.use_film,
+        num_images_in_input=exp.train.num_images_in_input,
+        use_proprio=exp.train.use_proprio,
+        batch_size=exp.train.batch_size,
+        learning_rate=exp.train.learning_rate,
+        lr_warmup_steps=exp.train.lr_warmup_steps,
+        num_steps_before_decay=exp.train.num_steps_before_decay,
+        grad_accumulation_steps=exp.train.grad_accumulation_steps,
+        max_steps=exp.train.max_steps,
+        use_val_set=(exp.train.use_val_set and exp.dataset.validation_ratio > 0),
+        val_freq=exp.train.val_freq,
+        val_time_limit=exp.train.val_time_limit,
+        save_freq=exp.train.save_freq,
+        save_latest_checkpoint_only=exp.train.save_latest_checkpoint_only,
+        resume=exp.train.resume,
+        resume_step=exp.train.resume_step,
+        image_aug=exp.train.image_aug,
+        diffusion_sample_freq=exp.train.diffusion_sample_freq,
+        use_lora=exp.train.use_lora,
+        lora_rank=exp.train.lora_rank,
+        lora_dropout=exp.train.lora_dropout,
+        merge_lora_during_training=exp.train.merge_lora_during_training,
+        wandb_entity=exp.train.wandb_entity,
+        wandb_project=exp.train.wandb_project,
+        run_id_note=exp.train.run_id_note,
+        run_id_override=exp.train.run_id_override,
+        wandb_log_freq=exp.train.wandb_log_freq,
+    )
+
+
 def finetune(cfg: FinetuneConfig) -> None:
     """
     Fine-tunes base VLA on demonstration dataset via LoRA.
@@ -790,7 +839,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Initialize wandb logging
     if distributed_state.is_main_process:
-        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{run_id}", mode="disabled")
+        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{run_id}")
 
     # Print detected constants
     print(
@@ -881,7 +930,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             "proprio_projector",
             cfg,
             device_id,
-            {"llm_dim": vla.module.llm_dim, "proprio_dim": PROPRIO_DIM},
+            {"llm_dim": vla.module.llm_dim, "proprio_dim": 7},
         )
 
     # If applicable, instantiate continuous action head for L1 regression
@@ -940,7 +989,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Create learning rate scheduler
     scheduler = MultiStepLR(
         optimizer,
-        milestones=[cfg.num_steps_before_decay],  # Number of steps after which LR will change
+        milestones=[cfg.num_steps_before_decay,2*cfg.num_steps_before_decay],  # Number of steps after which LR will change
         gamma=0.1,  # Multiplicative factor of learning rate decay
     )
 
@@ -1138,5 +1187,13 @@ def finetune(cfg: FinetuneConfig) -> None:
                 break
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path", required=True)
+    args = parser.parse_args()
+    exp = load_config(args.config_path)
+    finetune(build_finetune_config(exp))
+
+
 if __name__ == "__main__":
-    finetune()
+    main()
