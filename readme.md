@@ -254,6 +254,7 @@ This setup is used for the subsequent experients as default configuration, unles
 | Evaluation trials     | 3 seeds × 10 trials per task |
 | Main metric           | Physical task success rate   |
 | Average metric        | Macro-average over tasks     |
+| Default task          | Pick up the banana           |
 
 ## Single-task And Multi-task Performance
 | Training setting   | Checkpoints | Episodes per task | Total episodes | Total update steps | Pick Banana | Place on Plate | Push Red Block | Macro Avg. |
@@ -270,14 +271,12 @@ This setup is used for the subsequent experients as default configuration, unles
 |               100 |            300 |               45.0k |                   3.6 |              88.9 ± 2.2 |                 13.0 h |
 
 ## L1 Regression VS Diffusion Action Head
-| Action head   | Pick Banana | Place on Plate | Push Red Block |     Macro Avg. | Time per update | 40k-step time | Inference latency |
-| ------------- | ----------: | -------------: | -------------: | -------------: | --------------: | ------------: | ----------------: |
-| L1 Regression |        90.0 |           83.3 |           85.6 |     86.7 ± 2.7 |          1.15 s |    **12.8 h** |        **0.40 s** |
-| Diffusion     |        92.4 |           86.7 |           86.7 | **88.9 ± 2.2** |          1.55 s |        17.2 h |            0.82 s |
-
+| Action head   |     Macro Avg. | Time per update | 40k-step time | Inference latency |
+| ------------- | -------------: | --------------: | ------------: | ----------------: |
+| L1 Regression |     86.7 ± 2.7 |          1.15 s |    **12.8 h** |        **0.40 s** |
+| Diffusion     | **88.9 ± 2.2** |          1.55 s |        17.2 h |            0.82 s |
 
 # Example
-
 We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
 
 https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
