@@ -52,7 +52,7 @@ ninja --version; echo $?  # Verify Ninja --> should return exit code "0"
 pip install "flash-attn==2.5.5" --no-build-isolation
 ```
 
-You can modify your paths and hyperparameters in `configs/experiments/piper_multitasks.yaml`.
+You can modify your paths, hyperparameters and multitasks configuration in `configs/experiments/piper_multitasks.yaml`.
 
 # Step2: Data Collection And Conversion
 ## Data Collection
