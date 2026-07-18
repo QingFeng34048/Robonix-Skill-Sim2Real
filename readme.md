@@ -15,6 +15,7 @@ This project provides detailed guidelines to implement data collection, fine-tun
 # News
 * 🔥 [2026-06] We actively adapt to various hardware including robotic arms and cameras, and provide relevant codes for skill acceleration in the future.
 * 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
+* 🔥 [2026-07] Our Robonix-Skill-Toolkit now supports multitasks!
 
 # Hardware & System Config
 
@@ -51,13 +52,27 @@ ninja --version; echo $?  # Verify Ninja --> should return exit code "0"
 pip install "flash-attn==2.5.5" --no-build-isolation
 ```
 
-# Step2: Data Collection
+You can modify your paths and hyperparameters in `configs/experiments/piper_multitasks.yaml`.
 
+# Step2: Data Collection And Conversion
+## Data Collection
 `client/check_cam.py` is a script to verify whether the camera displays images normally. Test camera IDs 0, 1, 2 and 3, then record the valid ID.
 
 `client/collect_data.py` is used for data collection. Run the script, enter a prompt (e.g., "pick up the banana") as instructed, and press Enter to start the collection process. Press S to begin recording and Y to stop recording.
 
-`client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. A helper script `client/run_rlds.sh` is provided for this conversion.
+run
+```
+python data/collect_data.py \
+  --config_path configs/experiments/piper_multitask.yaml
+```
+
+## Data Conversion
+`client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. 
+run
+```
+python data/hdf5_to_rlds.py \
+  --config_path configs/experiments/piper_multitask.yaml
+```
 
 ## Data Example
 
@@ -125,7 +140,16 @@ Here is an example of `dataset_info.json` of datasets in RLDS format.
 
 # Step3: Fine-Tuning
 
-After manually configuring all file paths, run `openvla-oft/vla-scripts/finetune.sh`. The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
+The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
+run
+```
+torchrun \
+  --standalone \
+  --nnodes=1 \
+  --nproc-per-node=1 \
+  openvla-oft/vla-scripts/finetune.py \
+  --config_path configs/experiments/piper_multitask.yaml
+```
 
 Our configuration is:
 
@@ -175,9 +199,19 @@ These plots show the training loss, L1 loss, and action accuracy during fine-tun
 
 2. In our setup, a Dell laptop running Ubuntu controls the robotic arm. Connect the two USB cables from the robotic arm and camera to the laptop.
 
-3. Server code is stored in openvla-oft/server_oft.py and launched via the script `openvla-oft/run.sh`. Once started, the server stays idle and waits for data and commands sent from the client.
+3. Server code is stored in openvla-oft/server_oft.py. Once started, the server stays idle and waits for data and commands sent from the client.
 
-4. Next, navigate to the client folder on the client machine and execute `client/run.sh` to operate and observe the robotic arm’s movements.
+run
+```
+python openvla-oft/server_oft.py \
+  --config_path configs/experiments/piper_multitask.yaml
+```
+and
+```
+python client/robot_client_oft.py \
+  --config_path configs/experiments/piper_multitask.yaml
+```
+
 
 # Example
 
