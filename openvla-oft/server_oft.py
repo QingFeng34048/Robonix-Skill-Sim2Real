@@ -1,7 +1,12 @@
+"""OpenVLA-OFT 多任务推理服务端：配置统一、task_id 校验、共享 dataset unnorm_key。"""
+
+from __future__ import annotations
+
+import argparse
 import cgi
 import io
 import json
-import os
+import sys
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,8 +17,12 @@ import imageio.v2 as imageio
 import numpy as np
 from PIL import Image
 
-# Run this server inside the openvla-oft repo / conda env.
-# These imports are from OpenVLA-OFT.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from robonix_config import ExperimentConfig, expand_value, get_task_map, load_config, resolve_path
+
 from experiments.robot.openvla_utils import (
     get_action_head,
     get_processor,
@@ -24,69 +33,24 @@ from experiments.robot.openvla_utils import (
 from prismatic.vla.constants import NUM_ACTIONS_CHUNK, PROPRIO_DIM
 
 
-# ====== Edit these for your experiment ======
-# IMPORTANT:
-# This must be the OFT checkpoint ROOT directory, for example:
-#   .../openvla-7b+pick_up_the_banana2+b4+lr-0.0005+lora-r32+dropout-0.0--image_aug--1000_chkpt
-# It should contain:
-#   dataset_statistics.json
-#   action_head--1000_checkpoint.pt
-#   config.json / model files if merge_lora_during_training=True
-#   lora_adapter/
-#
-# Do NOT point this to the old OpenVLA base model path.
-# Do NOT point this to checkpoint_root/lora_adapter.
-OFT_CHECKPOINT_PATH = YOUR_OFT_CHECKPOINT_PATH_HERE
-
-UNNORM_KEY = "pick_up_the_banana"
-
-HOST = "0.0.0.0"
-PORT = 8001
-SAVE_DIR = YOUR_SAVE_DIR_HERE  # Set to None to disable saving incoming images.
-# Must match your OFT finetune config.
-USE_L1_REGRESSION = True
-USE_DIFFUSION = False
-USE_FILM = False
-NUM_IMAGES_IN_INPUT = 1
-
-# Set this to True only if you trained OFT with use_proprio=True
-# and your client sends the exact same proprio/state vector order used in the RLDS dataset.
-USE_PROPRIO = False
-
-# For best distribution match:
-# - True is commonly used in official OFT LIBERO evaluation.
-# - For a real camera, test both. If the banana/object is near the image edge, False may work better.
-CENTER_CROP = False
-
-# Quantization saves VRAM but can slightly change behavior. For best quality, keep both False.
-LOAD_IN_8BIT = False
-LOAD_IN_4BIT = False
-
-# Keep old-client compatibility: return first action in "action".
-# Also return full OFT chunk in "action_chunk".
-RETURN_FIRST_ACTION_ONLY_FOR_LEGACY = True
-
-
-def _build_cfg() -> SimpleNamespace:
+def _build_cfg(exp: ExperimentConfig) -> SimpleNamespace:
     return SimpleNamespace(
-        base_model=YOUR_BASE_MODEL_NAME_OR_PATH_HERE,  # e.g. "decapoda-research/llama-7b-hf"
-        pretrained_checkpoint=OFT_CHECKPOINT_PATH,
-        
-        use_l1_regression=USE_L1_REGRESSION,
-        use_diffusion=USE_DIFFUSION,
-        use_film=USE_FILM,
-        num_images_in_input=NUM_IMAGES_IN_INPUT,
-        use_proprio=USE_PROPRIO,
-        load_in_8bit=LOAD_IN_8BIT,
-        load_in_4bit=LOAD_IN_4BIT,
-        center_crop=CENTER_CROP,
+        base_model=expand_value(exp.train.vla_path),
+        pretrained_checkpoint=str(resolve_path(exp.server.checkpoint_path)),
+        use_l1_regression=exp.train.use_l1_regression,
+        use_diffusion=exp.train.use_diffusion,
+        use_film=exp.train.use_film,
+        num_images_in_input=exp.train.num_images_in_input,
+        use_proprio=exp.train.use_proprio,
+        load_in_8bit=exp.server.load_in_8bit,
+        load_in_4bit=exp.server.load_in_4bit,
+        center_crop=exp.server.center_crop,
         num_open_loop_steps=NUM_ACTIONS_CHUNK,
-        unnorm_key=UNNORM_KEY,
-
-        # Required by OpenVLA-OFT helper code in some branches/config paths.
-        lora_rank=32,
-        num_diffusion_steps_train=50,
-        num_diffusion_steps_inference=50,
+        # 多任务统一数据集只使用一个统计键，避免客户端自由文本决定反归一化。
+        unnorm_key=exp.dataset.name,
+        lora_rank=exp.train.lora_rank,
+        num_diffusion_steps_train=exp.train.num_diffusion_steps_train,
+        num_diffusion_steps_inference=exp.server.num_diffusion_steps_inference,
     )
 
 
@@ -96,33 +60,13 @@ def _validate_oft_checkpoint(path: str) -> None:
         raise FileNotFoundError(f"OFT checkpoint path does not exist: {checkpoint}")
     if not (checkpoint / "dataset_statistics.json").exists():
         raise FileNotFoundError(
-            f"Missing dataset_statistics.json in {checkpoint}. "
-            "Use the OFT checkpoint root directory, not lora_adapter."
+            f"Missing dataset_statistics.json in {checkpoint}. Use the OFT checkpoint root directory."
         )
     action_heads = list(checkpoint.glob("action_head--*checkpoint.pt"))
     if len(action_heads) != 1:
         raise FileNotFoundError(
-            f"Expected exactly one action_head--*checkpoint.pt in {checkpoint}, found {len(action_heads)}. "
-            "Use a single OFT checkpoint directory such as ...--1000_chkpt."
+            f"Expected exactly one action_head--*checkpoint.pt in {checkpoint}, found {len(action_heads)}."
         )
-
-
-def _load_policy_bundle():
-    _validate_oft_checkpoint(OFT_CHECKPOINT_PATH)
-
-    cfg = _build_cfg()
-
-    # get_vla() loads the merged OFT VLA checkpoint and dataset statistics.
-    # get_action_head() loads action_head--*_checkpoint.pt.
-    model = get_vla(cfg)
-    processor = get_processor(cfg)
-    action_head = get_action_head(cfg, llm_dim=model.llm_dim)
-
-    proprio_projector = None
-    if cfg.use_proprio:
-        proprio_projector = get_proprio_projector(cfg, llm_dim=model.llm_dim, proprio_dim=PROPRIO_DIM)
-
-    return cfg, model, processor, action_head, proprio_projector
 
 
 def _image_from_bytes(image_bytes: bytes, form: cgi.FieldStorage) -> Image.Image:
@@ -133,13 +77,11 @@ def _image_from_bytes(image_bytes: bytes, form: cgi.FieldStorage) -> Image.Image
         height = form.getvalue("height")
         if width is None or height is None:
             raise
-        width = int(width)
-        height = int(height)
+        width, height = int(width), int(height)
         arr = np.frombuffer(image_bytes, dtype=np.uint8)
         if arr.size != width * height * 3:
             raise ValueError("raw image size mismatch")
-        arr = arr.reshape((height, width, 3))
-        return Image.fromarray(arr, mode="RGB")
+        return Image.fromarray(arr.reshape((height, width, 3)), mode="RGB")
 
 
 def _to_list(value):
@@ -152,22 +94,45 @@ def _to_list(value):
 
 class VLARequestHandler(BaseHTTPRequestHandler):
     cfg = None
+    task_map = None
     model = None
     processor = None
     action_head = None
     proprio_projector = None
+    save_images = False
+    save_dir = None
+    return_first_action_for_legacy = True
 
     step = 0
     cond = threading.Condition()
     busy = False
 
     def _send_json(self, status_code: int, payload: dict) -> None:
-        data = json.dumps(payload).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def _resolve_task(self, form: cgi.FieldStorage):
+        task_id = form.getvalue("task_id")
+        instruction = form.getvalue("instruction")
+
+        if task_id:
+            task = self.task_map.get(str(task_id))
+            if task is None:
+                raise ValueError(f"unknown task_id: {task_id}")
+            return task.task_id, task.instruction
+
+        # 兼容旧客户端：仅在 instruction 与某个 canonical instruction 完全匹配时允许。
+        if instruction:
+            matches = [task for task in self.task_map.values() if task.instruction == str(instruction)]
+            if len(matches) == 1:
+                task = matches[0]
+                return task.task_id, task.instruction
+
+        raise ValueError("missing or invalid task_id")
 
     def do_POST(self) -> None:
         with VLARequestHandler.cond:
@@ -192,9 +157,10 @@ class VLARequestHandler(BaseHTTPRequestHandler):
                 keep_blank_values=True,
             )
 
-            instruction = form.getvalue("instruction")
-            if instruction is None:
-                self._send_json(400, {"error": "missing instruction"})
+            try:
+                task_id, instruction = self._resolve_task(form)
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
                 return
 
             image_field = form["image"] if "image" in form else None
@@ -209,15 +175,13 @@ class VLARequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "invalid image"})
                 return
 
-            os.makedirs(SAVE_DIR, exist_ok=True)
             VLARequestHandler.step += 1
-            np_image = np.array(image, dtype=np.uint8)
-            imageio.imwrite(os.path.join(SAVE_DIR, f"{VLARequestHandler.step:06d}.png"), np_image)
+            np_image = np.asarray(image, dtype=np.uint8)
+            if self.save_images and self.save_dir is not None:
+                self.save_dir.mkdir(parents=True, exist_ok=True)
+                imageio.imwrite(self.save_dir / f"{VLARequestHandler.step:06d}.png", np_image)
 
-            obs = {
-                "full_image": np_image,
-                "task_description": str(instruction),
-            }
+            obs = {"full_image": np_image, "task_description": instruction}
 
             state_raw = form.getvalue("state")
             state_list = None
@@ -225,13 +189,21 @@ class VLARequestHandler(BaseHTTPRequestHandler):
                 try:
                     state_list = json.loads(state_raw)
                 except Exception:
-                    state_list = state_raw
+                    self._send_json(400, {"error": "state must be JSON list"})
+                    return
 
             if self.cfg.use_proprio:
                 if state_list is None:
-                    self._send_json(400, {"error": "missing state; server USE_PROPRIO=True"})
+                    self._send_json(400, {"error": "missing state; use_proprio=True"})
                     return
-                obs["state"] = np.asarray(state_list, dtype=np.float32)
+                state = np.asarray(state_list, dtype=np.float32)
+                if state.shape != (PROPRIO_DIM,):
+                    self._send_json(400, {"error": f"state shape must be ({PROPRIO_DIM},), got {state.shape}"})
+                    return
+                if not np.all(np.isfinite(state)):
+                    self._send_json(400, {"error": "state contains NaN or Inf"})
+                    return
+                obs["state"] = state
 
             try:
                 actions = get_vla_action(
@@ -239,35 +211,36 @@ class VLARequestHandler(BaseHTTPRequestHandler):
                     self.model,
                     self.processor,
                     obs,
-                    str(instruction),
+                    instruction,
                     action_head=self.action_head,
                     proprio_projector=self.proprio_projector,
                     noisy_action_projector=None,
                     use_film=self.cfg.use_film,
                 )
-
                 action_chunk = [_to_list(action) for action in actions]
+                if not action_chunk:
+                    raise RuntimeError("model returned empty action chunk")
                 first_action = action_chunk[0]
 
                 print(
-                    f"step={VLARequestHandler.step}, "
-                    f"instruction={instruction}, "
-                    f"state={state_list}, "
-                    f"first_action={first_action}, "
-                    f"chunk_len={len(action_chunk)}"
+                    f"step={VLARequestHandler.step}, task_id={task_id}, "
+                    f"instruction={instruction!r}, state={state_list}, "
+                    f"first_action={first_action}, chunk_len={len(action_chunk)}"
                 )
 
-                payload = {
-                    "action": first_action if RETURN_FIRST_ACTION_ONLY_FOR_LEGACY else action_chunk,
-                    "action_chunk": action_chunk,
-                    "chunk_len": len(action_chunk),
-                }
-                self._send_json(200, payload)
-
+                self._send_json(
+                    200,
+                    {
+                        "task_id": task_id,
+                        "instruction": instruction,
+                        "action": first_action if self.return_first_action_for_legacy else action_chunk,
+                        "action_chunk": action_chunk,
+                        "chunk_len": len(action_chunk),
+                    },
+                )
             except Exception as exc:
                 print(traceback.format_exc())
                 self._send_json(500, {"error": str(exc)})
-
         finally:
             with VLARequestHandler.cond:
                 VLARequestHandler.busy = False
@@ -275,17 +248,36 @@ class VLARequestHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    cfg, model, processor, action_head, proprio_projector = _load_policy_bundle()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path", required=True)
+    args = parser.parse_args()
+    exp = load_config(args.config_path)
+
+    cfg = _build_cfg(exp)
+    _validate_oft_checkpoint(cfg.pretrained_checkpoint)
+
+    model = get_vla(cfg)
+    processor = get_processor(cfg)
+    action_head = get_action_head(cfg, llm_dim=model.llm_dim)
+    proprio_projector = None
+    if cfg.use_proprio:
+        proprio_projector = get_proprio_projector(cfg, llm_dim=model.llm_dim, proprio_dim=PROPRIO_DIM)
 
     VLARequestHandler.cfg = cfg
+    VLARequestHandler.task_map = get_task_map(exp)
     VLARequestHandler.model = model
     VLARequestHandler.processor = processor
     VLARequestHandler.action_head = action_head
     VLARequestHandler.proprio_projector = proprio_projector
+    VLARequestHandler.save_images = exp.server.save_images
+    VLARequestHandler.save_dir = resolve_path(exp.server.save_dir) if exp.server.save_images else None
+    VLARequestHandler.return_first_action_for_legacy = exp.server.return_first_action_for_legacy
 
-    print(f"Loaded OFT checkpoint: {OFT_CHECKPOINT_PATH}")
-    print(f"Serving on http://{HOST}:{PORT}/act")
-    server = ThreadingHTTPServer((HOST, PORT), VLARequestHandler)
+    print(f"Loaded OFT checkpoint: {cfg.pretrained_checkpoint}")
+    print(f"unnorm_key: {cfg.unnorm_key}")
+    print(f"use_proprio: {cfg.use_proprio}")
+    print(f"Serving on http://{exp.server.host}:{exp.server.port}/act")
+    server = ThreadingHTTPServer((exp.server.host, exp.server.port), VLARequestHandler)
     server.serve_forever()
 
 
