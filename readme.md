@@ -68,6 +68,7 @@ python data/collect_data.py \
 
 ## Data Conversion
 `client/hdf5_to_rlds.py` converts saved HDF5 files generated after successful data collection into datasets in RLDS format. 
+
 run
 ```
 python data/hdf5_to_rlds.py \
@@ -141,6 +142,7 @@ Here is an example of `dataset_info.json` of datasets in RLDS format.
 # Step3: Fine-Tuning
 
 The core fine-tuning code is located at `openvla-oft/vla-scripts/finetune.py`.
+
 run
 ```
 torchrun \
@@ -206,6 +208,7 @@ run
 python openvla-oft/server_oft.py \
   --config_path configs/experiments/piper_multitask.yaml
 ```
+
 and
 ```
 python client/robot_client_oft.py \
