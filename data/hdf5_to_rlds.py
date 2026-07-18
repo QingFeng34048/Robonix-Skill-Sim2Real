@@ -1,5 +1,10 @@
-# tsc
+"""HDF5 -> RLDS/TFDS，多任务可合并为一个 dataset.name。"""
+
+from __future__ import annotations
+
 import argparse
+import sys
+import zlib
 from pathlib import Path
 
 import h5py
@@ -7,55 +12,75 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from robonix_config import ExperimentConfig, get_task_map, load_config, resolve_path
+
 
 def _snake_to_camel(name: str) -> str:
     return "".join(part.capitalize() for part in name.split("_") if part)
 
 
-def _load_steps(path: Path, min_action_norm: float) -> list:
+def _decode_attr(value) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def _read_episode_metadata(path: Path) -> tuple[str, str]:
+    with h5py.File(path, "r") as f:
+        task_id = _decode_attr(f.attrs.get("task_id", path.parent.name))
+        instruction = _decode_attr(f.attrs.get("language_instruction", ""))
+    return task_id, instruction
+
+
+def _load_steps(path: Path, min_action_norm: float, preserve_gripper_changes: bool) -> list[dict]:
     with h5py.File(path, "r") as f:
         actions = f["action"][:].astype(np.float32)
         images = f["observations"]["images"][:].astype(np.uint8)
         states = f["observations"]["state"][:].astype(np.float32)
-        instruction = f.attrs.get("language_instruction", "")
+        instruction = _decode_attr(f.attrs.get("language_instruction", ""))
         reward = float(f.attrs.get("reward", 0.0))
 
-    if isinstance(instruction, bytes):
-        instruction = instruction.decode("utf-8")
-    else:
-        instruction = str(instruction)
+    if not (len(actions) == len(images) == len(states)):
+        raise ValueError(f"Length mismatch in {path}")
 
-    num_steps = int(actions.shape[0])
-    if min_action_norm > 0:
-        norms = np.linalg.norm(actions[:, :6], axis=1)
-        keep = (norms >= min_action_norm)
+    if min_action_norm > 0 and len(actions) > 1:
+        joint_motion = np.linalg.norm(actions[:, :6], axis=1) >= min_action_norm
+        keep = joint_motion.copy()
+
+        if preserve_gripper_changes:
+            changed = np.nonzero(states[1:, 6] != states[:-1, 6])[0]
+            keep[changed] = True
+            keep[np.minimum(changed + 1, len(keep) - 1)] = True
+
         keep[0] = True
         keep[-1] = True
         keep_indices = np.nonzero(keep)[0]
         if keep_indices.size < 2:
             return []
+
         states = states[keep_indices]
         images = images[keep_indices]
-        actions = np.zeros_like(states)
+        actions = np.zeros_like(states, dtype=np.float32)
         actions[:-1, :6] = states[1:, :6] - states[:-1, :6]
         actions[:-1, 6] = states[1:, 6]
         actions[-1, :6] = 0.0
         actions[-1, 6] = states[-1, 6]
-        num_steps = int(actions.shape[0])
+
     steps = []
-    for i in range(num_steps):
+    for i in range(len(actions)):
         steps.append(
             {
-                "observation": {
-                    "image": images[i],
-                    "state": states[i],
-                },
+                "observation": {"image": images[i], "state": states[i]},
                 "action": actions[i],
                 "reward": 0.0,
                 "discount": 1.0,
                 "is_first": i == 0,
-                "is_last": i == num_steps - 1,
-                "is_terminal": i == num_steps - 1,
+                "is_last": i == len(actions) - 1,
+                "is_terminal": i == len(actions) - 1,
                 "language_instruction": instruction,
             }
         )
@@ -66,13 +91,21 @@ def _load_steps(path: Path, min_action_norm: float) -> list:
     return steps
 
 
-def _make_builder(dataset_name: str, version: str, paths: list):
+def _make_builder(
+    dataset_name: str,
+    version: str,
+    train_paths: list[Path],
+    val_paths: list[Path],
+    min_action_norm: float,
+    preserve_gripper_changes: bool,
+    image_shape: tuple[int, int, int],
+):
     class_name = _snake_to_camel(dataset_name)
     step_features = tfds.features.FeaturesDict(
         {
             "observation": tfds.features.FeaturesDict(
                 {
-                    "image": tfds.features.Tensor(shape=(224, 224, 3), dtype=tf.uint8),
+                    "image": tfds.features.Tensor(shape=image_shape, dtype=tf.uint8),
                     "state": tfds.features.Tensor(shape=(7,), dtype=tf.float32),
                 }
             ),
@@ -92,19 +125,23 @@ def _make_builder(dataset_name: str, version: str, paths: list):
 
     def _split_generators(self, dl_manager):
         del dl_manager
-        return [
-            tfds.core.SplitGenerator(
-                name=tfds.Split.TRAIN,
-                gen_kwargs={"paths": paths},
-            )
+        splits = [
+            tfds.core.SplitGenerator(name=tfds.Split.TRAIN, gen_kwargs={"paths": train_paths})
         ]
+        if val_paths:
+            splits.append(
+                tfds.core.SplitGenerator(name=tfds.Split.VALIDATION, gen_kwargs={"paths": val_paths})
+            )
+        return splits
 
     def _generate_examples(self, paths):
         for path in paths:
-            steps = _load_steps(path, min_action_norm)
+            steps = _load_steps(path, min_action_norm, preserve_gripper_changes)
             if not steps:
                 continue
-            yield path.stem, {"steps": steps}
+            task_id, _ = _read_episode_metadata(path)
+            episode_key = f"{task_id}__{path.stem}"
+            yield episode_key, {"steps": steps}
 
     return type(
         class_name,
@@ -118,90 +155,107 @@ def _make_builder(dataset_name: str, version: str, paths: list):
     )
 
 
-# tsc
-def _collect_datasets(input_root: Path, dataset_name: str, exclude_fail: bool) -> list:
-    datasets = []
-    if dataset_name:
-        dataset_id = dataset_name.strip().replace(" ", "_")
-        dataset_dir = input_root / dataset_name
-        # tsc
-        if not dataset_dir.is_dir():
-            dataset_dir = input_root / dataset_name.replace("_", " ")
-        if not dataset_dir.is_dir():
-            dataset_dir = input_root
-        paths = sorted(dataset_dir.glob("*.hdf5"))
-        if exclude_fail:
-            paths = [p for p in paths if "FAIL" not in p.name]
-        if not paths:
-            raise SystemExit("No HDF5 files found.")
-        datasets.append((dataset_id, paths))
-        return datasets
+def _collect_task_paths(cfg: ExperimentConfig) -> dict[str, list[Path]]:
+    input_root = resolve_path(cfg.dataset.hdf5_root)
+    task_map = get_task_map(cfg)
+    task_to_paths: dict[str, list[Path]] = {}
 
-    subdirs = sorted([p for p in input_root.iterdir() if p.is_dir()])
-    if subdirs:
-        for subdir in subdirs:
-            dataset_id = subdir.name.strip().replace(" ", "_")
-            paths = sorted(subdir.glob("*.hdf5"))
-            if exclude_fail:
-                paths = [p for p in paths if "FAIL" not in p.name]
-            if paths:
-                datasets.append((dataset_id, paths))
-    else:
-        dataset_id = input_root.name.strip().replace(" ", "_")
-        paths = sorted(input_root.glob("*.hdf5"))
-        if exclude_fail:
-            paths = [p for p in paths if "FAIL" not in p.name]
-        if paths:
-            datasets.append((dataset_id, paths))
+    for task_id, task in task_map.items():
+        task_dir = input_root / task_id
+        if not task_dir.is_dir():
+            print(f"Warning: task directory missing: {task_dir}")
+            continue
 
-    if not datasets:
-        raise SystemExit("No HDF5 files found.")
-    return datasets
+        paths = sorted(task_dir.glob("*.hdf5"))
+        if cfg.dataset.exclude_fail:
+            paths = [p for p in paths if "FAIL" not in p.name]
+
+        checked = []
+        for path in paths:
+            file_task_id, instruction = _read_episode_metadata(path)
+            if file_task_id != task_id:
+                raise ValueError(f"{path}: task_id={file_task_id!r}, expected {task_id!r}")
+            if instruction != task.instruction:
+                raise ValueError(
+                    f"{path}: instruction mismatch; expected={task.instruction!r}, got={instruction!r}"
+                )
+            checked.append(path)
+
+        print(f"{task_id}: {len(checked)} episodes")
+        if checked:
+            task_to_paths[task_id] = checked
+
+    if not task_to_paths:
+        raise SystemExit("No HDF5 episodes found for enabled tasks.")
+    return task_to_paths
+
+
+def _split_task_paths(
+    task_to_paths: dict[str, list[Path]], validation_ratio: float, random_seed: int
+) -> tuple[list[Path], list[Path]]:
+    train_paths: list[Path] = []
+    val_paths: list[Path] = []
+
+    for task_id, paths in sorted(task_to_paths.items()):
+        shuffled = list(paths)
+        seed = random_seed + zlib.crc32(task_id.encode("utf-8"))
+        rng = np.random.default_rng(seed)
+        rng.shuffle(shuffled)
+
+        n_val = 0
+        if validation_ratio > 0 and len(shuffled) >= 2:
+            n_val = max(1, int(round(len(shuffled) * validation_ratio)))
+            n_val = min(n_val, len(shuffled) - 1)
+
+        val_paths.extend(shuffled[:n_val])
+        train_paths.extend(shuffled[n_val:])
+        print(f"  split {task_id}: train={len(shuffled) - n_val}, validation={n_val}")
+
+    return train_paths, val_paths
+
+
+def _build_one_dataset(
+    cfg: ExperimentConfig,
+    dataset_name: str,
+    task_to_paths: dict[str, list[Path]],
+) -> None:
+    train_paths, val_paths = _split_task_paths(
+        task_to_paths,
+        cfg.dataset.validation_ratio,
+        cfg.convert.random_seed,
+    )
+    if not train_paths:
+        raise RuntimeError(f"Dataset {dataset_name!r} has no training episodes.")
+
+    width, height = cfg.camera.model_res
+    builder_cls = _make_builder(
+        dataset_name=dataset_name,
+        version=cfg.dataset.version,
+        train_paths=train_paths,
+        val_paths=val_paths,
+        min_action_norm=cfg.dataset.min_action_norm,
+        preserve_gripper_changes=cfg.convert.preserve_gripper_changes,
+        image_shape=(height, width, 3),
+    )
+    output_root = resolve_path(cfg.dataset.rlds_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    builder = builder_cls(data_dir=output_root)
+    builder.download_and_prepare()
+    print(f"Built {dataset_name}: {builder.data_dir}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    # tsc
-    parser.add_argument(
-        "--input_dir",
-        default="openvla/piper/data",
-    )
-    # tsc
-    parser.add_argument(
-        "--output_dir",
-        default="openvla/piper/data_rlds",
-    )
-    # tsc
-    parser.add_argument(
-        "--dataset_name",
-        default="",
-    )
-    parser.add_argument(
-        "--version",
-        default="1.0.0",
-    )
-    # tsc
-    parser.add_argument(
-        "--exclude_fail",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--min_action_norm",
-        type=float,
-        default=0.0,
-    )
+    parser.add_argument("--config_path", required=True)
     args = parser.parse_args()
+    cfg = load_config(args.config_path)
 
-    # tsc
-    input_root = Path(args.input_dir)
-    datasets = _collect_datasets(input_root, args.dataset_name, args.exclude_fail)
-    for dataset_name, paths in datasets:
-        builder_cls = _make_builder(dataset_name, args.version, paths)
-        builder = builder_cls(data_dir=args.output_dir)
-        global min_action_norm
-        min_action_norm = args.min_action_norm
-        builder.download_and_prepare()
-        print(builder.data_dir)
+    task_to_paths = _collect_task_paths(cfg)
+    if cfg.convert.merge_tasks:
+        _build_one_dataset(cfg, cfg.dataset.name, task_to_paths)
+    else:
+        for task_id, paths in task_to_paths.items():
+            _build_one_dataset(cfg, task_id, {task_id: paths})
 
 
 if __name__ == "__main__":
