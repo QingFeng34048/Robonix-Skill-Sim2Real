@@ -1,72 +1,61 @@
-# 安全限位 — OFT Action-Chunk 客户端
-import cv2
-import time
+"""Piper OpenVLA-OFT 多任务客户端：统一配置、task_id、短 chunk 闭环执行。"""
+
+from __future__ import annotations
+
+import argparse
 import json
-import requests
-import numpy as np
+import sys
 import threading
-from piper_sdk import *
+import time
+from pathlib import Path
 
-# ================= 配置区域 =================
-SERVER_URL = "http://localhost:8001/act"
+import cv2
+import numpy as np
+import requests
+from piper_sdk import C_PiperInterface_V2
 
-# 硬件配置
-CAMERA_ID = 1
-CAN_PORT = "can0"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-# 图像配置
-CAPTURE_RES = (640, 480)
-SEND_RES = (224, 224)
-
-# --- 核心换算系数 ---
-RAD_TO_SDK_INT = 57295.7795
-
-GRIPPER_OPEN_SDK = 80000
-GRIPPER_CLOSE_SDK = 0
-GRIPPER_THRESHOLD_RAW = 3000
-
-CONTROL_FREQ = 10
-
-# --- OFT Action Chunk 配置 ---
-# 是否使用服务端返回的完整 action chunk（多步开环执行）
-# 设为 False 则退化为和原来一样只用第一个 action
-USE_ACTION_CHUNK = True
-# ===========================================
+from robonix_config import ExperimentConfig, TaskConfig, get_task_map, load_config
 
 
 class RobotClient:
-    def __init__(self):
+    def __init__(self, cfg: ExperimentConfig):
+        self.cfg = cfg
+        self.task_map = get_task_map(cfg)
+        self.task_id = cfg.client.default_task_id
+        self.task_cfg = self.task_map[self.task_id]
         self.step_count = 0
+        self.task_step_count = 0
+        self.last_target_joints = None
 
-        # 1. 初始化摄像头
-        print(f"正在打开摄像头 (ID={CAMERA_ID})...")
-        self.cap = cv2.VideoCapture(CAMERA_ID)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAPTURE_RES[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAPTURE_RES[1])
+        print(f"正在打开摄像头 (ID={cfg.camera.camera_id})...")
+        self.cap = cv2.VideoCapture(cfg.camera.camera_id)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.camera.capture_res[0])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg.camera.capture_res[1])
         if not self.cap.isOpened():
-            raise Exception("无法打开摄像头")
+            raise RuntimeError("无法打开摄像头")
 
-        # 后台线程：专门负责清空摄像头底层缓存，保证拿到的永远是最新帧
         self.latest_frame = None
         self.camera_lock = threading.Lock()
         self.is_running = True
         self.camera_thread = threading.Thread(target=self._update_camera_frame, daemon=True)
         self.camera_thread.start()
-
         while self.latest_frame is None:
             time.sleep(0.01)
 
-        # 2. 初始化机械臂
-        print(f"正在连接机械臂 ({CAN_PORT})...")
-        self.piper = C_PiperInterface_V2(CAN_PORT)
+        print(f"正在连接机械臂 ({cfg.robot.can_port})...")
+        self.piper = C_PiperInterface_V2(cfg.robot.can_port)
         self.piper.ConnectPort()
+        while not self.piper.EnablePiper():
+            time.sleep(0.01)
 
-        self.enable_and_reset()
-        self.last_target_joints = None
+        self.move_to_task_init(self.task_cfg)
+        print(">>> 系统初始化完成 <<<")
 
-        print(">>> 系统初始化完成，等待指令 <<<")
-
-    def _update_camera_frame(self):
+    def _update_camera_frame(self) -> None:
         while self.is_running:
             ret, frame = self.cap.read()
             if ret:
@@ -75,46 +64,58 @@ class RobotClient:
             else:
                 time.sleep(0.01)
 
-    def enable_and_reset(self):
-        print("正在检查使能状态...")
-        time.sleep(0.1)
-        while not self.piper.EnablePiper():
-            time.sleep(0.01)
-        print("使能成功!!!!")
+    def move_to_task_init(self, task: TaskConfig) -> None:
+        position = task.init_pose
+        factor = self.cfg.robot.rad_to_sdk_int
+        joints = [round(position[i] * factor) for i in range(6)]
+        gripper = (
+            self.cfg.robot.gripper_open_sdk
+            if position[6] > 0.5
+            else self.cfg.robot.gripper_close_sdk
+        )
 
-        print("正在移动到初始位置")
-        position = [0.547, 1.258, -1.552, 0.003, 1.315, -0.576, 1]
-        factor = RAD_TO_SDK_INT
-
-        joint_0 = round(position[0] * factor)
-        joint_1 = round(position[1] * factor)
-        joint_2 = round(position[2] * factor)
-        joint_3 = round(position[3] * factor)
-        joint_4 = round(position[4] * factor)
-        joint_5 = round(position[5] * factor)
-
-        self.piper.ModeCtrl(0x01, 0x01, 80, 0x00)
-        self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
-        self.piper.GripperCtrl(abs(GRIPPER_OPEN_SDK), 1000, 0x01, 0)
-
+        print(f"移动到任务初始位置: {task.task_id}")
+        self.piper.ModeCtrl(0x01, 0x01, self.cfg.robot.move_speed, 0x00)
+        self.piper.JointCtrl(*joints)
+        self.piper.GripperCtrl(gripper, self.cfg.robot.gripper_speed, 0x01, 0)
         time.sleep(3.0)
+        self.last_target_joints = None
+        self.task_step_count = 0
 
-    def get_robot_state_rad(self):
+    def select_task(self) -> None:
+        tasks = list(self.task_map.values())
+        print("\n可用推理任务：")
+        for index, task in enumerate(tasks):
+            print(f"  [{index}] {task.task_id}: {task.instruction}")
+        try:
+            selected = int(input("任务编号: ").strip())
+            task = tasks[selected]
+        except (ValueError, IndexError):
+            print("无效任务编号，保持当前任务。")
+            return
+
+        self.task_id = task.task_id
+        self.task_cfg = task
+        self.last_target_joints = None
+        self.task_step_count = 0
+        self.move_to_task_init(task)
+        print(f"当前任务: {self.task_id} | {self.task_cfg.instruction}")
+
+    def get_robot_state_rad(self) -> tuple[list[float], float]:
         j_msg = self.piper.GetArmJointMsgs().joint_state
         g_msg = self.piper.GetArmGripperMsgs().gripper_state
-
+        factor = self.cfg.robot.rad_to_sdk_int
         joints = [
-            j_msg.joint_1 / RAD_TO_SDK_INT,
-            j_msg.joint_2 / RAD_TO_SDK_INT,
-            j_msg.joint_3 / RAD_TO_SDK_INT,
-            j_msg.joint_4 / RAD_TO_SDK_INT,
-            j_msg.joint_5 / RAD_TO_SDK_INT,
-            j_msg.joint_6 / RAD_TO_SDK_INT,
+            j_msg.joint_1 / factor,
+            j_msg.joint_2 / factor,
+            j_msg.joint_3 / factor,
+            j_msg.joint_4 / factor,
+            j_msg.joint_5 / factor,
+            j_msg.joint_6 / factor,
         ]
-
-        current_g_raw = g_msg.grippers_angle
-        gripper_state = 1.0 if current_g_raw > GRIPPER_THRESHOLD_RAW else 0.0
-
+        gripper_state = float(
+            g_msg.grippers_angle > self.cfg.robot.gripper_threshold_raw
+        )
         return joints, gripper_state
 
     def capture_image_bytes(self):
@@ -123,140 +124,146 @@ class RobotClient:
                 return None, None
             frame = self.latest_frame.copy()
 
-        frame = cv2.flip(frame, -1)
-        img_resized = cv2.resize(frame, SEND_RES)
-        _, img_encoded = cv2.imencode('.jpg', img_resized)
+        frame = cv2.flip(frame, self.cfg.camera.flip_code)
+        img_resized = cv2.resize(frame, tuple(self.cfg.camera.model_res))
+        ok, img_encoded = cv2.imencode(".jpg", img_resized)
+        if not ok:
+            return None, img_resized
         return img_encoded.tobytes(), img_resized
 
-    def execute_action(self, current_joints, action_pred):
-        delta_joints = np.array(action_pred[:6])
+    def execute_action(self, base_joints: list[float], action_pred: list[float]) -> list[float]:
+        action = np.asarray(action_pred, dtype=np.float32)
+        if action.shape != (7,):
+            raise ValueError(f"Expected action shape (7,), got {action.shape}")
 
-        # ==================== 安全锁 1：单步增量截断 ====================
-        max_delta = 0.05
-        delta_joints = np.clip(delta_joints, -max_delta, max_delta)
-        # ================================================================
+        delta_joints = np.clip(
+            action[:6],
+            -self.task_cfg.max_delta,
+            self.task_cfg.max_delta,
+        )
+        target_joints_rad = np.asarray(base_joints, dtype=np.float32) + delta_joints
+        target_gripper_state = float(action[6])
 
-        target_joints_rad = np.array(current_joints) + delta_joints
-
-        # ==================== 安全锁 2：绝对物理限位 ====================
-        # target_joints_rad[1] = np.clip(target_joints_rad[1], 0.39, 1.45)
-        # target_joints_rad[2] = np.clip(target_joints_rad[2], -0.50, 3.15)
-        # ================================================================
-
-        target_gripper_state = action_pred[6]
-
-        cmd_joints = [int(round(j * RAD_TO_SDK_INT)) for j in target_joints_rad]
-        cmd_gripper = GRIPPER_OPEN_SDK if target_gripper_state > 0.5 else GRIPPER_CLOSE_SDK
+        cmd_joints = [int(round(j * self.cfg.robot.rad_to_sdk_int)) for j in target_joints_rad]
+        cmd_gripper = (
+            self.cfg.robot.gripper_open_sdk
+            if target_gripper_state > 0.5
+            else self.cfg.robot.gripper_close_sdk
+        )
 
         self.piper.JointCtrl(*cmd_joints)
-        self.piper.GripperCtrl(cmd_gripper, 1000, 0x01, 0)
+        self.piper.GripperCtrl(cmd_gripper, self.cfg.robot.gripper_speed, 0x01, 0)
         return target_joints_rad.tolist()
 
-    def display_frame(self, display_img, extra_text=""):
-        """在画面上叠加调试信息并刷新窗口，返回是否需要退出。"""
+    def display_frame(self, display_img, extra_text: str = "") -> str | None:
         if display_img is None:
-            return False
-        info = f"Step: {self.step_count} (OFT)"
+            return None
+        info = f"Task: {self.task_id} | Step: {self.task_step_count}"
         if extra_text:
             info += f" | {extra_text}"
-        cv2.putText(display_img, info, (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+        cv2.putText(display_img, info, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(display_img, "Q: quit | T: switch task", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
         cv2.imshow("Robot View", display_img)
-        return (cv2.waitKey(1) & 0xFF) == ord('q')
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            return "quit"
+        if key == ord("t"):
+            return "switch"
+        return None
 
-    def run(self):
-        print("\n" + "=" * 50)
-        print("OpenVLA-OFT 远程推理客户端 (Action-Chunk Mode)")
-        print(f"Server: {SERVER_URL}")
-        print(f"USE_ACTION_CHUNK: {USE_ACTION_CHUNK}")
-        print("=" * 50)
+    def request_action_chunk(self, img_bytes: bytes, state_list: list[float]) -> list[list[float]]:
+        files = {"image": ("obs.jpg", img_bytes, "image/jpeg")}
+        data = {
+            "task_id": self.task_id,
+            "instruction": self.task_cfg.instruction,
+            "state": json.dumps(state_list),
+        }
+        response = requests.post(
+            self.cfg.client.server_url,
+            files=files,
+            data=data,
+            timeout=self.cfg.client.request_timeout,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Server {response.status_code}: {response.text}")
 
-        instruction = input("请输入文本指令 (例如 'pick up the banana'): ").strip()
-        print(f"当前任务: {instruction}")
-        print(">>> 按下回车键开始推理，按 Ctrl+C 停止...")
-        input()
+        result = response.json()
+        if self.cfg.client.use_action_chunk and "action_chunk" in result:
+            action_chunk = result["action_chunk"]
+        else:
+            raw_action = result["action"]
+            action_chunk = raw_action if raw_action and isinstance(raw_action[0], list) else [raw_action]
 
-        interval = 1.0 / CONTROL_FREQ
+        if not action_chunk:
+            raise RuntimeError("Server returned empty action chunk")
+        return action_chunk
 
+    def run(self) -> None:
+        print("\n" + "=" * 64)
+        print("OpenVLA-OFT 多任务远程推理客户端")
+        print(f"Server: {self.cfg.client.server_url}")
+        print("按 T 可切换任务；每次只执行任务配置中的前 K 个 action，然后重新观测。")
+        print("=" * 64)
+        self.select_task()
+        input(">>> 按回车开始推理...")
+
+        interval = 1.0 / self.cfg.client.control_freq
         try:
             while True:
-                # ============================================================
-                # 阶段 A：采集当前观测，向服务端请求一次推理，拿到 action chunk
-                # ============================================================
+                if self.task_step_count >= self.task_cfg.max_steps:
+                    print(f"任务 {self.task_id} 已达到 max_steps={self.task_cfg.max_steps}，请选择下一任务。")
+                    self.select_task()
+
                 img_bytes, display_img = self.capture_image_bytes()
-
-                # 先刷新一帧画面
-                if self.display_frame(display_img, "requesting..."):
+                event = self.display_frame(display_img, "requesting...")
+                if event == "quit":
                     break
-
+                if event == "switch":
+                    self.select_task()
+                    continue
                 if img_bytes is None:
                     time.sleep(0.01)
                     continue
 
                 curr_joints, curr_gripper = self.get_robot_state_rad()
                 state_list = curr_joints + [curr_gripper]
-                state_json = json.dumps(state_list)
 
-                # 发送请求
                 try:
-                    files = {'image': ('obs.jpg', img_bytes, 'image/jpeg')}
-                    data = {'instruction': instruction, 'state': state_json}
-                    response = requests.post(SERVER_URL, files=files, data=data, timeout=10)
-                except Exception as e:
-                    print(f"Req Failed: {e}")
+                    action_chunk = self.request_action_chunk(img_bytes, state_list)
+                except Exception as exc:
+                    print(f"Req Failed: {exc}")
                     time.sleep(0.05)
                     continue
 
-                if response.status_code != 200:
-                    print(f"Server Error: {response.status_code}")
-                    continue
+                execute_steps = min(self.task_cfg.execute_chunk_steps, len(action_chunk))
+                print(
+                    f"[OFT] chunk_len={len(action_chunk)}, execute={execute_steps}, "
+                    f"first={action_chunk[0][:3]}..."
+                )
 
-                result = response.json()
-
-                # ---------------------------------------------------------
-                # 解析服务端返回：优先使用 action_chunk，否则回退到 action
-                # ---------------------------------------------------------
-                if USE_ACTION_CHUNK and "action_chunk" in result:
-                    action_chunk = result["action_chunk"]
-                else:
-                    # 兼容旧逻辑：action 可能是单个 list 或 list of lists
-                    raw_action = result["action"]
-                    if isinstance(raw_action[0], list):
-                        action_chunk = raw_action
-                    else:
-                        action_chunk = [raw_action]
-
-                chunk_len = len(action_chunk)
-                print(f"[OFT] 收到 action chunk, 长度={chunk_len}, 首action={action_chunk[0][:3]}...")
-
-                # ============================================================
-                # 阶段 B：逐步执行 chunk 中的每一个 action（开环）
-                # ============================================================
-                for idx, action in enumerate(action_chunk):
+                switch_requested = False
+                for idx, action in enumerate(action_chunk[:execute_steps]):
                     step_start = time.time()
-
                     self.step_count += 1
+                    self.task_step_count += 1
 
-                    # 基于上一步目标关节角做累加（保持平滑）
-                    base_joints = (self.last_target_joints
-                                   if self.last_target_joints is not None
-                                   else curr_joints)
-                    target_joints = self.execute_action(base_joints, action)
-                    self.last_target_joints = target_joints
+                    base_joints = self.last_target_joints if self.last_target_joints is not None else curr_joints
+                    self.last_target_joints = self.execute_action(base_joints, action)
 
-                    # 执行期间持续刷新画面
                     _, disp = self.capture_image_bytes()
-                    if self.display_frame(disp, f"chunk {idx+1}/{chunk_len}"):
-                        raise KeyboardInterrupt  # 用户按 q 退出
+                    event = self.display_frame(disp, f"chunk {idx + 1}/{execute_steps}")
+                    if event == "quit":
+                        raise KeyboardInterrupt
+                    if event == "switch":
+                        switch_requested = True
+                        break
 
-                    print(f"  step={self.step_count}, chunk[{idx+1}/{chunk_len}], "
-                          f"action={action[:3]}...")
-
-                    # 控频
                     elapsed = time.time() - step_start
                     if elapsed < interval:
                         time.sleep(interval - elapsed)
 
+                if switch_requested:
+                    self.select_task()
         except KeyboardInterrupt:
             print("\n停止运行...")
         finally:
@@ -265,6 +272,13 @@ class RobotClient:
             cv2.destroyAllWindows()
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_path", required=True)
+    args = parser.parse_args()
+    cfg = load_config(args.config_path)
+    RobotClient(cfg).run()
+
+
 if __name__ == "__main__":
-    client = RobotClient()
-    client.run()
+    main()
