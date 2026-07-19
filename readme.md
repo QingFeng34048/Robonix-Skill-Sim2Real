@@ -2,7 +2,7 @@
   <img src="images/robonix-logo.svg" alt="Robonix" width="420" />
 </p>
 
-# Robonix-Skill-Toolkit
+# Robonix-Sim2Real-Skill
 
 This project provides detailed guidelines to implement data collection, fine-tuning, deployment and optimization on physical robotic arms based on the VLA model！Specifically, we provide the following function:
 
@@ -10,16 +10,16 @@ This project provides detailed guidelines to implement data collection, fine-tun
 2. High-Efficient Deployment guidance for VLA-based Skills
 3. Data collection, data cleaning and data utilization mechanism with Real-World Robotic Arm
 
-We also evaluate the developed robotic skills under different training and deployment settings. Detailed results are available in the [Benchmark and Metrics](#benchmark-and-metrics) section.
+We evaluated the developed robotic skills under different training and deployment settings. Detailed results are available in the [Benchmark and Metrics](#benchmark-and-metrics) section.We also deployed the fine-tuned models on Agilex Piper, a physical robotic arm. Demonstration videos are available in the [Example Demonstration](#example-demonstration) section.
 
 ![layer架构](./images/robonix-layers.png)
 
 # News
 
-- 🔥 [2026-07] Robonix-Skill-Toolkit now supports configurable multi-task data collection, HDF5-to-RLDS conversion and task-conditioned deployment. Multi-task fine-tuning is integrated through the OpenVLA-OFT configuration pipeline.
+- 🔥 [2026-07] Robonix-Sim2Real-Skill now supports configurable multi-task data collection, HDF5-to-RLDS conversion and task-conditioned deployment. Multi-task fine-tuning is integrated through the OpenVLA-OFT configuration pipeline.
 
 * 🔥 [2026-06] We actively adapt to various hardware including robotic arms and cameras, and provide relevant codes for skill acceleration in the future.
-* 🔥 [2026-06] We released Robonix-SKill-Toolkit for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
+* 🔥 [2026-06] We released Robonix-Sim2Real-Skill for [Robonix](https://github.com/syswonder/robonix), based on [OpenVLA-OFT](https://openvla-oft.github.io) framework and [AgileX Piper Robotic Arm](https://github.com/agilexrobotics/Agilex-College)！
 
 # Supported Hardware
 
@@ -482,6 +482,6 @@ There are several approaches to fine-tuning the model. The two methods we common
 |   Diffusion   | 78.9 ± 2.2 |     1.55 s      |    17.2 h     |      0.82 s       |
 
 # Example Demonstration
-We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
+We present an example to demonstrate the performance of Robonix-Sim2Real-Skill:
 
 https://github.com/user-attachments/assets/daf14475-6878-4553-8284-d4ef6c2db285
