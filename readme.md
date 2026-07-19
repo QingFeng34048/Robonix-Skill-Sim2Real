@@ -10,7 +10,7 @@ This project provides detailed guidelines to implement data collection, fine-tun
 2. High-Efficient Deployment guidance for VLA-based Skills
 3. Data collection, data cleaning and data utilization mechanism with Real-World Robotic Arm
 
-We evaluated the developed robotic skills under different training and deployment settings. Detailed results are available in the [Benchmark and Metrics](#benchmark-and-metrics) section.We also deployed the fine-tuned models on Agilex Piper, a physical robotic arm. Demonstration videos are available in the [Example Demonstration](#example-demonstration) section.
+We evaluated the developed robotic skills under different training and deployment settings. Detailed results are available in the [Benchmark and Metrics](#benchmark-and-metrics) section. We also deployed the fine-tuned models on Agilex Piper, a physical robotic arm. Demonstration videos are available in the [Example Demonstration](#example-demonstration) section.
 
 ![layer架构](./images/robonix-layers.png)
 
