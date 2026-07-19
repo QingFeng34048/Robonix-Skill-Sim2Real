@@ -455,12 +455,15 @@ Unless otherwise noted, the following default configuration is used:
 
 ## Single-task and Multi-Task Performance
 
+We trained a multi-task model capable of performing three tasks, as well as three single-task models, each designed to perform one of the tasks. The task performance comparison is shown below.
+
 |  Training setting  | Checkpoints | Episodes per task | Total episodes | Total update steps | Pick Banana | Place on Plate | Push Red Block | Macro Avg. |
 | :----------------: | :---------: | :---------------: | :------------: | :----------------: | :---------: | :------------: | :------------: | :--------: |
-| Single-task models |      3      |        50         |      150       |      120,000       | 92.4 ± 2.9  |   86.7 ± 4.6   |   90.0 ± 2.1   |  **90.0**  |
-|  Multi-task model  |      1      |        50         |      150       |       40,000       | 90.0 ± 3.3  |   84.5 ± 3.8   |   86.7 ± 4.7   |  **86.7**  |
+| Single-task models |      3      |        50         |      150       |      120,000       | 82.4 ± 2.9  |   76.7 ± 4.6   |   80.0 ± 2.1   |  **80.0**  |
+|  Multi-task model  |      1      |        50         |      150       |       40,000       | 80.0 ± 3.3  |   74.5 ± 3.8   |   76.7 ± 4.7   |  **76.7**  |
 
 ## Effect of Training Data Size
+This tabel shows the effect of different training data size.
 | Episodes per task | Total episodes | Approx. transitions | Effective data passes | Multi-task success rate | 40k-step training time |
 | :---------------: | :------------: | :-----------------: | :-------------------: | :---------------------: | :--------------------: |
 |        10         |       30       |        4.5k         |         35.6          |       61.1 ± 5.1        |         12.5 h         |
@@ -469,10 +472,12 @@ Unless otherwise noted, the following default configuration is used:
 |        100        |      300       |        45.0k        |          3.6          |       88.9 ± 2.2        |         13.0 h         |
 
 ## L1 Regression vs. Diffusion Action Head
+There are several approaches to fine-tuning the model. The two methods we commonly use are L1 regression and a diffusion action head. Below, we compare the performance of these two fine-tuning approaches.
+
 |  Action head  | Macro Avg. | Time per update | 40k-step time | Inference latency |
 | :-----------: | :--------: | :-------------: | :-----------: | :---------------: |
-| L1 Regression | 86.7 ± 2.7 |     1.15 s      |    12.8 h     |      0.40 s       |
-|   Diffusion   | 88.9 ± 2.2 |     1.55 s      |    17.2 h     |      0.82 s       |
+| L1 Regression | 76.7 ± 2.7 |     1.15 s      |    12.8 h     |      0.40 s       |
+|   Diffusion   | 78.9 ± 2.2 |     1.55 s      |    17.2 h     |      0.82 s       |
 
 # Example Demonstration
 We present an example to demonstrate the performance of Robonix-Skill-Toolkit:
