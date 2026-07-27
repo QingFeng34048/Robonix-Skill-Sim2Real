@@ -1,1 +1,10 @@
+[contract]
+id = "robonix/skill/openvla_oft/execute/cancel"
+version = "1"
+kind = "skill"
+idl = "openvla_oft/srv/CancelTask.srv"
+description = "Cancel an OpenVLA-OFT manipulation task."
+
+[mode]
+type = "rpc"
 
