@@ -1,1 +1,10 @@
-1
+[contract]
+id = "robonix/skill/openvla_oft/execute"
+version = "1"
+kind = "skill"
+idl = "openvla_oft/srv/ExecuteTask.srv"
+description = "Execute a configured OpenVLA-OFT manipulation task."
+
+[mode]
+type = "rpc"
+
