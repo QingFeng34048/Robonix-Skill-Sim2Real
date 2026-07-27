@@ -73,11 +73,7 @@ def _channel_qos(channel, fallback: str) -> str:
 
 
 class ArmAdapter:
-    """通过 Atlas 消费机械臂状态并发布关节位置命令。
-
-    SafetyFilter 应在调用 command_joint_target() 之前执行。
-    ArmAdapter 只做结构、单位和有限值检查。
-    """
+   
 
     def __init__(
         self,
@@ -128,7 +124,7 @@ class ArmAdapter:
         self._joint_names = resolved_names
         self._gripper_name = gripper_name.strip()
 
-        # 以下两个字段是 Piper 当前驱动使用的扩展约定。
+       
         self._piper_command_metadata = piper_command_metadata
         self._joint_velocity_pct = float(joint_velocity_pct)
         self._gripper_effort = float(gripper_effort)
@@ -211,9 +207,7 @@ class ArmAdapter:
                 declare=False,
             )
 
-            # 当前 robonix-api 没有单独的
-            # create_publisher_from_channel()。
-            # 发布端直接使用 Channel.endpoint。
+            
             command_publisher = self._skill.create_publisher(
                 contract_id=JOINT_COMMAND_CONTRACT,
                 topic=command_channel.endpoint,
@@ -353,7 +347,7 @@ class ArmAdapter:
                 f"age={age_s:.3f}s, limit={max_age_s:.3f}s"
             )
 
-        # ArmState 及其 tuple 字段均不可变，可以安全返回。
+        
         return state
 
     def command_joint_target(
@@ -421,10 +415,7 @@ class ArmAdapter:
         *,
         max_state_age_s: float,
     ) -> None:
-        """发布一次当前测量位置，用于取消后的保持。
-
-        这不是硬件急停，只是停止继续追踪未来动作并保持当前位置。
-        """
+       
 
         state = self.latest_state(max_age_s=max_state_age_s)
 
